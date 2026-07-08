@@ -94,6 +94,16 @@ button:disabled{opacity:.5;cursor:not-allowed}
 #modal .sub{margin-top:7px;display:none}
 #modal .opt.on .sub{display:block}
 #modal select,#modal input[type=text]{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;font-family:inherit;margin-top:4px;background:#fff}
+#modal details{border:1px solid var(--line);border-radius:8px;margin-top:10px;padding:0}
+#modal details summary{padding:9px 10px;font-weight:700;cursor:pointer;user-select:none;color:var(--accent);font-size:13.5px}
+#modal details .dbody{padding:4px 10px 10px}
+.cgrp{margin:7px 0 3px;font-size:12.5px;color:#5a6b7d;font-weight:700}
+.cchip{display:inline-block;border:1.5px solid var(--line);border-radius:16px;padding:4px 11px;margin:3px 4px 3px 0;cursor:pointer;user-select:none;font-size:12.5px;background:#fff}
+.cchip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.mrow{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin:3px 0}
+.tchip{display:inline-block;border:1px solid var(--line);border-radius:12px;padding:2px 9px;cursor:pointer;user-select:none;font-size:11.5px;background:#fff;color:#5a6b7d}
+.tchip.on{background:#19733d;border-color:#19733d;color:#fff}
+#modal textarea{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;margin-top:6px;min-height:52px;resize:vertical}
 #modal .foot{display:flex;gap:8px;margin-top:12px}
 #modal .foot button{flex:1}
 .done-ring{box-shadow:0 0 0 3px #19c37d,0 1px 4px rgba(0,0,0,.45)!important}
@@ -260,6 +270,14 @@ button:disabled{opacity:.5;cursor:not-allowed}
     </label>
     <div style="margin-top:8px">淹水高度(公分,批次填報時統一套用):<input type="text" id="mDepth" placeholder="例:30"></div>
     <div style="margin-top:8px">權責單位:<input type="text" id="mAgency" placeholder="例:水利局/區公所/工務局"></div>
+    <details id="dCause"><summary>致災原因(可複選)</summary><div class="dbody">
+      <div id="causeBox"></div>
+      <textarea id="mCauseNote" placeholder="致災原因文字說明(選填)"></textarea>
+    </div></details>
+    <details id="dMeasure"><summary>改善對策(可複選,每項可選短/中/長期)</summary><div class="dbody">
+      <div id="measureBox"></div>
+      <textarea id="mMeasureNote" placeholder="改善對策文字說明(選填)"></textarea>
+    </div></details>
     <div style="margin-top:8px">填報人(單位/姓名):<input type="text" id="mReporter" placeholder="例:水利局-王小明"></div>
     <div class="small" id="mState" style="margin-top:6px"></div>
     <div class="foot">
@@ -347,6 +365,90 @@ function posPayload(c){
 }
 
 // ---- 填報 Modal ----
+// ---- 致災原因 / 改善對策 ----
+const CAUSE_GROUPS=[
+ {g:'道路側溝',opts:['無','不足'],ex:true},
+ {g:'雨水下水道',opts:['無','不足'],ex:true},
+ {g:'聯通管',opts:['無','不足'],ex:true},
+ {g:'中、小、區排',opts:['不足'],ex:true},
+ {g:'機械抽排',opts:['無','不足'],ex:true},
+ {g:'閘門',opts:['無'],ex:true},
+ {g:'現地狀況',opts:['地勢低窪凹陷','冒孔溢淹','涵洞積淹','過水路橋','車行地下道'],ex:false}
+];
+const MEASURE_GROUPS=[
+ {g:'排水孔蓋',opts:['排水孔蓋:新增','排水孔蓋:改建','排水孔蓋:增大']},
+ {g:'雨水下水道',opts:['雨水下水道:新增','雨水下水道:改建','雨水下水道:增大']},
+ {g:'其他工程/措施',opts:['新增聯通管','治理改善','更新機組','擴充抽水設備','新增閘門','水封改善','聚落圍堤','非工措施','清淤','改建洩壓式孔蓋','例行性封阻','增設CCTV']}
+];
+const TERMS=['短期','中期','長期'];
+let causeSel=new Set(), measureSel={}; // measureSel: {對策名: 期程}
+function buildCauseUI(){
+  const box=document.getElementById('causeBox');
+  box.innerHTML='';
+  CAUSE_GROUPS.forEach(gr=>{
+    const t=document.createElement('div');t.className='cgrp';t.textContent=gr.g;box.appendChild(t);
+    gr.opts.forEach(o=>{
+      const key=gr.ex&&gr.g!=='現地狀況'?gr.g+':'+o:o;
+      const ch=document.createElement('span');ch.className='cchip';ch.textContent=o;ch.dataset.key=key;
+      ch.onclick=()=>{
+        if(causeSel.has(key)){causeSel.delete(key);}
+        else{
+          if(gr.ex&&gr.g!=='現地狀況'){gr.opts.forEach(o2=>causeSel.delete(gr.g+':'+o2));}
+          causeSel.add(key);
+        }
+        refreshCauseUI();
+      };
+      box.appendChild(ch);
+    });
+  });
+  refreshCauseUI();
+}
+function refreshCauseUI(){
+  document.querySelectorAll('#causeBox .cchip').forEach(ch=>ch.classList.toggle('on',causeSel.has(ch.dataset.key)));
+}
+function buildMeasureUI(){
+  const box=document.getElementById('measureBox');
+  box.innerHTML='';
+  MEASURE_GROUPS.forEach(gr=>{
+    const t=document.createElement('div');t.className='cgrp';t.textContent=gr.g;box.appendChild(t);
+    gr.opts.forEach(name=>{
+      const row=document.createElement('div');row.className='mrow';
+      const ch=document.createElement('span');ch.className='cchip';ch.textContent=name;
+      const termWrap=document.createElement('span');termWrap.style.display='none';
+      TERMS.forEach(tm=>{
+        const tc=document.createElement('span');tc.className='tchip';tc.textContent=tm;
+        tc.onclick=e=>{e.stopPropagation();measureSel[name]=tm;refreshMeasureUI();};
+        termWrap.appendChild(tc);
+      });
+      ch.onclick=()=>{
+        if(name in measureSel)delete measureSel[name];
+        else measureSel[name]='短期';
+        refreshMeasureUI();
+      };
+      row.appendChild(ch);row.appendChild(termWrap);box.appendChild(row);
+    });
+  });
+  refreshMeasureUI();
+}
+function refreshMeasureUI(){
+  document.querySelectorAll('#measureBox .mrow').forEach(row=>{
+    const ch=row.querySelector('.cchip'), name=ch.textContent, on=name in measureSel;
+    ch.classList.toggle('on',on);
+    const wrap=row.children[1];wrap.style.display=on?'inline':'none';
+    wrap.querySelectorAll('.tchip').forEach(tc=>tc.classList.toggle('on',on&&measureSel[name]===tc.textContent));
+  });
+}
+function serializeCauses(){return [...causeSel].join('、');}
+function serializeMeasures(){return Object.entries(measureSel).map(([n,t])=>n+'['+t+']').join('、');}
+function parseCauses(str){causeSel=new Set((str||'').split('、').filter(Boolean));}
+function parseMeasures(str){
+  measureSel={};
+  (str||'').split('、').filter(Boolean).forEach(x=>{
+    const m=x.match(/^(.*?)\[(短期|中期|長期)\]$/);
+    if(m)measureSel[m[1]]=m[2]; else measureSel[x]='短期';
+  });
+}
+buildCauseUI();buildMeasureUI();
 const modalBg=document.getElementById('modalBg');
 let editingSeqs=[];
 function openFill(seq){
@@ -376,6 +478,17 @@ function openFill(seq){
   document.getElementById('mDepth').value=batch?'':(c.depth||'');
   document.getElementById('mAgency').value=batch?'':(c.agency||'');
   document.getElementById('mReporter').value=reporter;
+  causeSel=new Set();measureSel={};
+  document.getElementById('mCauseNote').value='';
+  document.getElementById('mMeasureNote').value='';
+  if(!batch&&f){
+    parseCauses(f.causes);parseMeasures(f.measures);
+    document.getElementById('mCauseNote').value=f.causeNote||'';
+    document.getElementById('mMeasureNote').value=f.measureNote||'';
+  }
+  refreshCauseUI();refreshMeasureUI();
+  document.getElementById('dCause').open=causeSel.size>0||!!(f&&f.causeNote);
+  document.getElementById('dMeasure').open=Object.keys(measureSel).length>0||!!(f&&f.measureNote);
   let pre=null, preOld='', st='';
   if(batch){
     pre='新災點';
@@ -427,10 +540,12 @@ document.getElementById('mSubmit').onclick=async()=>{
   }
   reporter=rep;
   const agency=document.getElementById('mAgency').value.trim();
+  const cm={causes:serializeCauses(),causeNote:document.getElementById('mCauseNote').value.trim(),
+            measures:serializeMeasures(),measureNote:document.getElementById('mMeasureNote').value.trim()};
   const items=editingSeqs.map(sq=>{
     const c=curBySeq[sq];
     const p=Object.assign({seq:sq,dist:c.dist,addr:c.addr,type:t.value,ts:new Date().toISOString(),
-      reporter:rep,lat:c.lat,lon:c.lon,locMethod:c.locMethod,depth:depth,agency:agency},shared);
+      reporter:rep,lat:c.lat,lon:c.lon,locMethod:c.locMethod,depth:depth,agency:agency},shared,cm);
     return p;
   });
   const btn=document.getElementById('mSubmit');btn.disabled=true;btn.textContent='送出中…';
@@ -447,7 +562,7 @@ document.getElementById('mSubmit').onclick=async()=>{
 
 // ---- 總表格式 CSV 匯出 ----
 function exportCsv(){
-  const head=['序號','轄區科','行政區','淹水路段(地址)','淹水高度(公分)','最大水深(公分)','最大水深時間','(1)非積淹水事件（填寫原因）','(1)(新災點)合併災點名稱','(1)(舊災點-積淹水會議)108-115積淹水點','權責單位','淹水時間','退水時間','通報來源','備註','座標X','座標Y'];
+  const head=['序號','轄區科','行政區','淹水路段(地址)','淹水高度(公分)','最大水深(公分)','最大水深時間','(1)非積淹水事件（填寫原因）','(1)(新災點)合併災點名稱','(1)(舊災點-積淹水會議)108-115積淹水點','權責單位','淹水時間','退水時間','通報來源','備註','座標X','座標Y','致災原因','致災原因說明','改善對策(含期程)','改善對策說明'];
   const rows=cur.map(c=>{
     const f=fills[c.seq]||{};
     return [c.seq,c.dept,c.dist,c.addr,c.depth,c.sensorMax,c.sensorTime,
@@ -455,7 +570,8 @@ function exportCsv(){
       f.type==='新災點'?(f.newName||''):(f.type?'':c.sheetNew),
       f.type==='舊災點'?(f.oldName||''):(f.type?'':c.sheetOld),
       c.agency,c.tStart,c.tEnd,c.source,c.note,
-      c.lon==null?'':c.lon, c.lat==null?'':c.lat];
+      c.lon==null?'':c.lon, c.lat==null?'':c.lat,
+      f.causes||'', f.causeNote||'', f.measures||'', f.measureNote||''];
   });
   const csv='\ufeff'+[head,...rows].map(r=>r.map(v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
   const b=new Blob([csv],{type:'text/csv;charset=utf-8'});
@@ -639,6 +755,8 @@ function popCur(c){
   const fillBlock=f
     ?`<div style="background:#e7f5ec;border:1.5px solid #19733d;border-radius:8px;padding:7px 9px;margin:7px 0">
        <b style="color:#19733d">✓ 已填報:${esc(f.type)}</b>${f.oldName?'<br>對應舊災點:'+esc(f.oldName):''}${f.newName?'<br>合併災點名稱:'+esc(f.newName):''}${f.reason?'<br>原因:'+esc(f.reason):''}
+       ${f.causes?'<br><b>致災原因:</b>'+esc(f.causes):''}${f.causeNote?'<br><small>原因說明:'+esc(f.causeNote)+'</small>':''}
+       ${f.measures?'<br><b>改善對策:</b>'+esc(f.measures):''}${f.measureNote?'<br><small>對策說明:'+esc(f.measureNote)+'</small>':''}
        <br><small>填報人:${esc(f.reporter||'匿名')} ${f.ts?new Date(f.ts).toLocaleString('zh-TW'):''}</small>
        <button style="width:100%;margin-top:6px" onclick="openFill(${c.seq})">✏️ 變更填報</button></div>`
     :`<div style="background:#fdeceb;border:1.5px solid #d43d2a;border-radius:8px;padding:7px 9px;margin:7px 0">
