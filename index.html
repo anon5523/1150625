@@ -7,6 +7,7 @@
 <title>1150625豪雨淹(積)水災點地圖 × 108-115年歷史災點比對</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="./sewer_data.js" onerror="console.warn('sewer_data.js 未載入')"></script>
 <style>
 :root{
   --ink:#122033; --paper:#f5f7f9; --panel:#ffffff; --line:#d8dfe6;
@@ -184,6 +185,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
   <div class="sec">
     <h2>統計(依目前篩選)</h2>
     <div class="stat" id="stats"></div>
+  </div>
+
+  <div class="sec" style="border-left:4px solid #0d6efd">
+    <h2>雨水下水道圖資(1150626)</h2>
+    <label class="vrow"><input type="checkbox" id="ckSewerPi"><span style="display:inline-block;width:14px;height:3px;background:#0d6efd;flex-shrink:0"></span>管線<span class="cnt" id="cntPi"></span></label>
+    <label class="vrow"><input type="checkbox" id="ckSewerMh"><span class="dot" style="background:#475569"></span>人孔<span class="cnt" id="cntMh"></span></label>
+    <div class="small" id="sewerHint" style="margin-top:4px"></div>
   </div>
 
   <div class="sec" style="border-left:4px solid #b3261e">
@@ -732,6 +740,66 @@ const gHist = L.layerGroup().addTo(map);
 const gCircle = L.layerGroup().addTo(map);
 const gLines = L.layerGroup();
 initSelectBox();
+
+// ---- 雨水下水道圖資 ----
+const SEWER_OK = typeof SEWER_DATA!=='undefined';
+const sewerCanvas = L.canvas({padding:0.3});
+const gSewerPi = L.layerGroup().addTo(map);
+const gSewerMh = L.layerGroup().addTo(map);
+const SEWER_MIN_ZOOM = 15;
+function sewerHint(msg){document.getElementById('sewerHint').textContent=msg;}
+if(SEWER_OK){
+  document.getElementById('cntPi').textContent=SEWER_DATA.pipes.length+' 段';
+  document.getElementById('cntMh').textContent=SEWER_DATA.mh.length+' 座';
+  sewerHint('資料日期:115/6/26。勾選後縮放至街道層級(zoom≥'+SEWER_MIN_ZOOM+')顯示,僅載入畫面範圍內圖資。');
+}else{
+  sewerHint('⚠ 找不到 sewer_data.js:請將該檔與 index.html 一併上傳到 GitHub 同一目錄。');
+  ['ckSewerPi','ckSewerMh'].forEach(id=>document.getElementById(id).disabled=true);
+}
+function renderSewer(){
+  gSewerPi.clearLayers();gSewerMh.clearLayers();
+  if(!SEWER_OK)return;
+  const wantPi=document.getElementById('ckSewerPi').checked;
+  const wantMh=document.getElementById('ckSewerMh').checked;
+  if(!wantPi&&!wantMh)return;
+  if(map.getZoom()<SEWER_MIN_ZOOM){sewerHint('請再放大地圖(目前 zoom '+map.getZoom()+',需 ≥'+SEWER_MIN_ZOOM+')以顯示下水道圖資。');return;}
+  const b=map.getBounds().pad(0.15);
+  let nPi=0,nMh=0;
+  if(wantPi){
+    SEWER_DATA.pipes.forEach(p=>{
+      const segs=p[0];
+      let inb=false;
+      for(const seg of segs){for(const pt of seg){if(b.contains(pt)){inb=true;break;}}if(inb)break;}
+      if(!inb)return;
+      nPi++;
+      L.polyline(segs,{renderer:sewerCanvas,color:'#0d6efd',weight:2.2,opacity:.75})
+        .bindPopup(`<b class="hd">雨水下水道管線</b><table class="attr">
+          <tr><td>管段編號</td><td>${p[1]}</td></tr>
+          <tr><td>尺寸(寬×高)</td><td>${p[2]}</td></tr>
+          <tr><td>材質</td><td>${p[3]}</td></tr>
+          <tr><td>期程</td><td>${p[4]}</td></tr>
+          <tr><td>行政區</td><td>${p[5]}</td></tr></table>`,{maxWidth:280})
+        .addTo(gSewerPi);
+    });
+  }
+  if(wantMh){
+    SEWER_DATA.mh.forEach(m=>{
+      if(!b.contains([m[0],m[1]]))return;
+      nMh++;
+      L.circleMarker([m[0],m[1]],{renderer:sewerCanvas,radius:3.5,color:'#334155',weight:1.2,fillColor:'#94a3b8',fillOpacity:.9})
+        .bindPopup(`<b class="hd">雨水下水道人孔</b><table class="attr">
+          <tr><td>人孔編號</td><td>${m[2]}</td></tr>
+          <tr><td>路名</td><td>${m[3]}</td></tr>
+          <tr><td>孔深(公尺)</td><td>${m[4]||'—'}</td></tr>
+          <tr><td>行政區</td><td>${m[5]}</td></tr>
+          <tr><td>座標</td><td>${m[0]}, ${m[1]}</td></tr></table>`,{maxWidth:280})
+        .addTo(gSewerMh);
+    });
+  }
+  sewerHint('畫面範圍內:管線 '+nPi+' 段、人孔 '+nMh+' 座(資料日期 115/6/26)。');
+}
+['ckSewerPi','ckSewerMh'].forEach(id=>document.getElementById(id).onchange=renderSewer);
+map.on('moveend zoomend',renderSewer);
 
 function hav(a,b,c,d){const R=6371000,r=Math.PI/180,p1=a*r,p2=c*r,dp=(c-a)*r,dl=(d-b)*r,x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
 function distTable(c){
