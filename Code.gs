@@ -1,5 +1,5 @@
 /**
- * 1150625豪雨 新舊災點共同填報 — Google Apps Script 後端 (v4)
+ * 1150625豪雨 新舊災點共同填報 — Google Apps Script 後端 (v5)
  * v2 變更:
  *  - 支援批次寫入({batch:[...]}),一次可寫入數百筆
  *  - 「位置更新」紀錄與「判定填報」紀錄分流:
@@ -7,13 +7,14 @@
  *    → 拖曳修正的座標跨裝置同步,且不影響已填報判定
  *  - 新增「淹水高度(公分)」「權責單位」欄位
  *  - v4 新增「致災原因」「致災原因說明」「改善對策(含期程)」「改善對策說明」欄位
+ *  - v5 新增「完整修改JSON」欄位,支援線上修改災點完整表單(型別:資料修改)
  * ※ 更新方式:貼上本檔後,部署 → 管理部署作業 → 鉛筆 → 版本:新版本 → 部署(網址不變)
  */
 var SHEET_NAME = '填報紀錄';
 var HEADERS = ['填報時間','序號','行政區','淹水路段(地址)','判定類型',
                '非積淹水原因','新災點合併名稱','舊災點項次','舊災點名稱',
                '填報人','緯度','經度','定位方式','淹水高度(公分)','權責單位',
-               '致災原因','致災原因說明','改善對策(含期程)','改善對策說明'];
+               '致災原因','致災原因說明','改善對策(含期程)','改善對策說明','完整修改JSON'];
 var JUDGE_TYPES = ['舊災點','新災點','非積淹水事件'];
 
 function getSheet_() {
@@ -41,7 +42,8 @@ function rowToRec_(r) {
     causes: r.length > 15 ? r[15] : '',
     causeNote: r.length > 16 ? r[16] : '',
     measures: r.length > 17 ? r[17] : '',
-    measureNote: r.length > 18 ? r[18] : ''
+    measureNote: r.length > 18 ? r[18] : '',
+    edits: r.length > 19 ? r[19] : ''
   };
 }
 
@@ -49,17 +51,18 @@ function doGet(e) {
   var sh = getSheet_();
   var rows = sh.getDataRange().getValues();
   rows.shift();
-  var fills = {}, pos = {};
+  var fills = {}, pos = {}, edits = {};
   rows.forEach(function (r) {
     if (r[1] === '' || r[1] == null) return;
     var rec = rowToRec_(r);
     var seq = String(rec.seq);
     if (JUDGE_TYPES.indexOf(rec.type) > -1) fills[seq] = rec;      // 最新判定
+    if (rec.type === '資料修改' && rec.edits) edits[seq] = { ts: rec.ts, edits: rec.edits, reporter: rec.reporter }; // 最新完整修改
     if (rec.lat !== '' && rec.lon !== '' && rec.lat != null && rec.lon != null) {
       pos[seq] = { lat: rec.lat, lon: rec.lon, locMethod: rec.locMethod, ts: rec.ts }; // 最新座標(任何類型)
     }
   });
-  return ContentService.createTextOutput(JSON.stringify({ fills: fills, pos: pos }))
+  return ContentService.createTextOutput(JSON.stringify({ fills: fills, pos: pos, edits: edits }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -76,7 +79,7 @@ function doPost(e) {
               p.reason || '', p.newName || '', p.oldIdx || '', p.oldName || '',
               p.reporter || '', p.lat != null ? p.lat : '', p.lon != null ? p.lon : '',
               p.locMethod || '', p.depth != null ? p.depth : '', p.agency || '',
-              p.causes || '', p.causeNote || '', p.measures || '', p.measureNote || ''];
+              p.causes || '', p.causeNote || '', p.measures || '', p.measureNote || '', p.edits || ''];
     });
     var sh = getSheet_();
     sh.getRange(sh.getLastRow() + 1, 1, rows.length, HEADERS.length).setValues(rows);
